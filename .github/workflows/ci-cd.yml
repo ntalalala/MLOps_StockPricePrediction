@@ -51,24 +51,43 @@ jobs:
         run: |
           export AIRFLOW_HOME=$(pwd)/.ci_airflow_home 
           mkdir -p $AIRFLOW_HOME
-          airflow db init
+          
+          echo "Initializing Airflow metadata database (temporary for CI)..."
+          airflow db migrate
 
           export PYTHONPATH=$(pwd):$(pwd)/src:$PYTHONPATH
-          echo "Listing all DAGs and checking for import errors with airflow dags list --report..."
+          
+          echo "Attempting to list DAGs (initial parse check)..."
+          airflow dags list
 
-          airflow dags list --report
-          echo "Individually testing DAG file importability and basic syntax..."
-
+          echo "Individually testing DAG file Python syntax and Airflow import errors..."
+          FAIL_FLAG=0
           find ./airflow/dags -name "*.py" -print0 | while IFS= read -r -d $'\0' dag_file; do
             echo "--- Validating DAG file: $dag_file ---"
-            if python -m ast "$dag_file"; then
-              echo "Python syntax OK for $dag_file"
-              airflow dags list-import-errors --subdir "$dag_file"
-            else
+           
+            if ! python -m ast "$dag_file"; then
               echo "Python syntax ERROR in $dag_file"
+              FAIL_FLAG=1 
+            else
+              echo "Python syntax OK for $dag_file"
+              IMPORT_ERRORS=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1) # Capture stdout and stderr
+              
+              if [[ -n "$IMPORT_ERRORS" && ! "$IMPORT_ERRORS" =~ "No import errors" && ! "$IMPORT_ERRORS" =~ "DAGS_FOLDER" && ! "$IMPORT_ERRORS" =~ "dag_id" ]]; then
+                echo "Airflow import ERRORS found in $dag_file:"
+                echo "$IMPORT_ERRORS"
+                FAIL_FLAG=1 
+              else
+                echo "No critical Airflow import errors detected for $dag_file (or only informational output)."
+              fi
             fi
             echo "--- Finished validating $dag_file ---"
           done
+
+          if [ "$FAIL_FLAG" -eq 1 ]; then
+            echo "One or more DAG validation checks failed."
+            exit 1
+          fi
+          echo "All DAGs validated successfully."
 
       # DETERMINE DOCKER IMAGE TAGS BASED ON BRANCH
       - name: Determine Docker image tag suffix for floating tags
