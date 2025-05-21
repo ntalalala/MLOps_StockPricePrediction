@@ -148,8 +148,9 @@ class TestDBUtils(unittest.TestCase):
         }
         mock_df_msftload_sql = pd.DataFrame(df_data_msftload_sql)
 
-        def read_sql_side_effect_for_load_data(sql_query_arg, conn_arg, params_arg, parse_dates_arg):
-            ticker_param = params_arg[0]
+        # MODIFIED side_effect function signature
+        def read_sql_side_effect_for_load_data(sql, con, params=None, parse_dates=None, **kwargs):
+            ticker_param = params[0]
             if ticker_param == 'AAPLLOAD':
                 return mock_df_aapload_sql.copy()
             elif ticker_param == 'MSFTLOAD':
@@ -187,10 +188,12 @@ class TestDBUtils(unittest.TestCase):
         aapl_df_from_sql = pd.DataFrame(aapl_data_from_sql)
         msft_df_empty_from_sql = pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'dividends', 'stock_splits'])
         
-        def side_effect_read_sql(query, conn, params, parse_dates):
-            if params[0] == 'AAPLSIDE': return aapl_df_from_sql.copy()
-            elif params[0] == 'MSFTSIDE': return msft_df_empty_from_sql.copy()
-            return pd.DataFrame(columns=msft_df_empty_from_sql.columns) # Ensure consistent empty df structure
+        # MODIFIED side_effect function signature
+        def side_effect_read_sql(sql, con, params=None, parse_dates=None, **kwargs):
+            ticker_param = params[0] 
+            if ticker_param == 'AAPLSIDE': return aapl_df_from_sql.copy()
+            elif ticker_param == 'MSFTSIDE': return msft_df_empty_from_sql.copy()
+            return pd.DataFrame(columns=msft_df_empty_from_sql.columns)
         mock_read_sql.side_effect = side_effect_read_sql
         
         tickers = ['AAPLSIDE', 'MSFTSIDE']
@@ -211,7 +214,7 @@ class TestDBUtils(unittest.TestCase):
         tickers_list = ['T1PROC', 'T2PROC']
         db_utils.save_processed_features_to_db(SAMPLE_DB_CONFIG, data_np, targets_np, features, tickers_list, run_id)
         args_tuple = mock_cursor.execute.call_args[0][1]
-        np.testing.assert_array_equal(pickle.loads(args_tuple[1]), data_np) # Compare content after unpickling
+        np.testing.assert_array_equal(pickle.loads(args_tuple[1]), data_np) 
         np.testing.assert_array_equal(pickle.loads(args_tuple[2]), targets_np)
         mock_cursor.fetchone.return_value = (run_id, pickle.dumps(data_np), pickle.dumps(targets_np), json.dumps(features), json.dumps(tickers_list))
         loaded_data = db_utils.load_processed_features_from_db(SAMPLE_DB_CONFIG, run_id)
@@ -277,7 +280,7 @@ class TestDBUtils(unittest.TestCase):
         mock_cursor.fetchall.return_value = [mock_row1, mock_row2]
         result = db_utils.get_latest_prediction_for_all_tickers(SAMPLE_DB_CONFIG)
         
-        # Expect Decimal as db_utils.get_latest_prediction_for_all_tickers does not convert
+        # Expect Decimal as db_utils.get_latest_prediction_for_all_tickers does not convert (as per constraint)
         expected = [
             {'ticker': 'AAPLALL', 'date': '2023-10-25', 'predicted_price': Decimal('150.751'), 'model_mlflow_run_id': 'run1all'},
             {'ticker': 'MSFTALL', 'date': '2023-10-25', 'predicted_price': Decimal('300.502'), 'model_mlflow_run_id': 'run1all'}
@@ -289,14 +292,13 @@ class TestDBUtils(unittest.TestCase):
         mock_conn = MagicMock(); mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
         mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
         
-        # Test with Decimal input from mock, expect float output from this specific function
         mock_row_decimal = {'target_prediction_date': date(2023,10,25), 
                             'predicted_price': Decimal('180.2031'), 
                             'model_mlflow_run_id': 'run_xyz_target_decimal'}
         mock_cursor.fetchone.return_value = mock_row_decimal
         result_decimal = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'XYZTARGETDECIMAL')
         expected_decimal = {'target_prediction_date': '2023-10-25', 
-                            'predicted_price': 180.2031, # This function DOES convert to float
+                            'predicted_price': 180.2031, # This function IS converting Decimal to float
                             'model_mlflow_run_id': 'run_xyz_target_decimal'}
         self.assertEqual(result_decimal, expected_decimal)
 
@@ -409,14 +411,13 @@ class TestDBUtils(unittest.TestCase):
         mock_cursor.fetchone.return_value = mock_db_row
         result = db_utils.get_prediction_for_date_ticker(SAMPLE_DB_CONFIG, target_date, ticker_symbol)
         
-        # Expect Decimal as db_utils.get_prediction_for_date_ticker does not convert
+        # Expect Decimal as db_utils.get_prediction_for_date_ticker does not convert (as per constraint)
         expected = {'predicted_price': Decimal('200.505'), 'model_mlflow_run_id': 'model_run_abc_preddt'}
         self.assertEqual(result, expected)
 
         mock_cursor.fetchone.return_value = None
         result_none = db_utils.get_prediction_for_date_ticker(SAMPLE_DB_CONFIG, target_date, "NONEPREDDT")
         self.assertIsNone(result_none)
-
 
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
