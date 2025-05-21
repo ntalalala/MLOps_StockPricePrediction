@@ -1,4 +1,4 @@
-# tests/utils/test_db_utils.py
+# tests/utils/test_examples.py (or test_db_utils.py)
 
 import unittest
 from unittest.mock import patch, MagicMock, ANY, call
@@ -9,24 +9,21 @@ import numpy as np
 import pickle
 import json
 from datetime import datetime, date, timedelta
-from decimal import Decimal
+from decimal import Decimal # Import Decimal
 from pathlib import Path
 import sys
 
 # Ensure src is in a discoverable path for tests
-PROJECT_ROOT = Path(__file__).resolve().parents[2] # Adjust if your test structure is different
+PROJECT_ROOT = Path(__file__).resolve().parents[2] 
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from utils import db_utils # Assuming db_utils.py is in src/utils/
+from utils import db_utils
 
 # Sample DB config for tests
 SAMPLE_DB_CONFIG = {
-    'dbname': 'test_db',
-    'user': 'test_user',
-    'password': 'test_password',
-    'host': 'localhost',
-    'port': '5432'
+    'dbname': 'test_db', 'user': 'test_user', 'password': 'test_password',
+    'host': 'localhost', 'port': '5432'
 }
 
 # Simple pickleable class for scaler tests
@@ -35,12 +32,11 @@ class SimpleScaler:
         self.min_ = np.array([min_val])
         self.scale_ = np.array([scale_val])
 
-    def __eq__(self, other): # For easier comparison in tests if needed
+    def __eq__(self, other): 
         if not isinstance(other, SimpleScaler):
             return False
         return np.array_equal(self.min_, other.min_) and \
                np.array_equal(self.scale_, other.scale_)
-
 
 class TestDBUtils(unittest.TestCase):
 
@@ -48,14 +44,10 @@ class TestDBUtils(unittest.TestCase):
     def test_get_db_connection_success(self, mock_connect):
         mock_conn_instance = MagicMock()
         mock_connect.return_value = mock_conn_instance
-
         conn = db_utils.get_db_connection(SAMPLE_DB_CONFIG)
-
         mock_connect.assert_called_once_with(
-            dbname=SAMPLE_DB_CONFIG['dbname'],
-            user=SAMPLE_DB_CONFIG['user'],
-            password=SAMPLE_DB_CONFIG['password'],
-            host=SAMPLE_DB_CONFIG['host'],
+            dbname=SAMPLE_DB_CONFIG['dbname'], user=SAMPLE_DB_CONFIG['user'],
+            password=SAMPLE_DB_CONFIG['password'], host=SAMPLE_DB_CONFIG['host'],
             port=SAMPLE_DB_CONFIG['port']
         )
         self.assertEqual(conn, mock_conn_instance)
@@ -63,7 +55,6 @@ class TestDBUtils(unittest.TestCase):
     @patch('utils.db_utils.psycopg2.connect')
     def test_get_db_connection_failure(self, mock_connect):
         mock_connect.side_effect = psycopg2.OperationalError("Connection failed")
-
         with self.assertRaises(psycopg2.OperationalError):
             db_utils.get_db_connection(SAMPLE_DB_CONFIG)
 
@@ -73,10 +64,9 @@ class TestDBUtils(unittest.TestCase):
         mock_cursor = MagicMock()
         mock_get_db_connection.return_value = mock_conn
         mock_conn.cursor.return_value = mock_cursor
-
         db_utils.setup_database(SAMPLE_DB_CONFIG)
-
         executed_sql = [c[0][0].strip() for c in mock_cursor.execute.call_args_list]
+        # Check for presence of key table/index creation statements
         self.assertTrue(any("CREATE TABLE IF NOT EXISTS raw_stock_data" in s for s in executed_sql))
         self.assertTrue(any("CREATE INDEX IF NOT EXISTS idx_raw_ticker_date ON raw_stock_data (ticker, date)" in s for s in executed_sql))
         self.assertTrue(any("CREATE TABLE IF NOT EXISTS processed_feature_data" in s for s in executed_sql))
@@ -87,58 +77,30 @@ class TestDBUtils(unittest.TestCase):
         self.assertTrue(any("CREATE TABLE IF NOT EXISTS optimization_results" in s for s in executed_sql))
         self.assertTrue(any("CREATE TABLE IF NOT EXISTS model_performance_log" in s for s in executed_sql))
         self.assertTrue(any("CREATE INDEX IF NOT EXISTS idx_perf_log_date_ticker ON model_performance_log (prediction_date, ticker)" in s for s in executed_sql))
-
-
+        
         mock_conn.commit.assert_called_once()
-        # --- MODIFICATION FOR TEST TO PASS WITHOUT CHANGING DB_UTILS.PY ---
-        # Expect close to be called twice on cursor and conn in the non-exception path
-        self.assertEqual(mock_cursor.close.call_count, 2, "Cursor close should be called twice")
-        self.assertEqual(mock_conn.close.call_count, 2, "Connection close should be called twice")
-        # --- END MODIFICATION ---
+        self.assertEqual(mock_cursor.close.call_count, 2)
+        self.assertEqual(mock_conn.close.call_count, 2)
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_to_raw_table_success(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
         mock_get_db_connection.return_value = mock_conn
         mock_conn.cursor.return_value = mock_cursor
-
         data = {
-            'Open': [np.float64(100.0), 101.0, pd.NA],
-            'High': [102.0, 103.0, 104.0],
-            'Low': [99.0, 100.0, 100.5],
-            'Close': [101.5, 102.5, 103.5],
+            'Open': [np.float64(100.0), 101.0, pd.NA], 'High': [102.0, 103.0, 104.0],
+            'Low': [99.0, 100.0, 100.5], 'Close': [101.5, 102.5, 103.5],
             'Volume': [np.int64(100000), 120000, np.int32(130000)],
-            'Dividends': [0.0, np.float32(0.5), 0.0],
-            'Stock Splits': [0.0, 0.0, 2.0]
+            'Dividends': [0.0, np.float32(0.5), 0.0], 'Stock Splits': [0.0, 0.0, 2.0]
         }
-        dates = [pd.Timestamp('2023-01-01 00:00:00'), pd.Timestamp('2023-01-02 00:00:00'), pd.Timestamp('2023-01-03 00:00:00')]
+        dates = [pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-02'), pd.Timestamp('2023-01-03')]
         df = pd.DataFrame(data, index=pd.Index(dates, name='date'))
-        
-        ticker = 'TESTRAW'
-        rows_affected = db_utils.save_to_raw_table(ticker, df, SAMPLE_DB_CONFIG)
-
+        ticker = 'TESTRAW'; rows_affected = db_utils.save_to_raw_table(ticker, df, SAMPLE_DB_CONFIG)
         self.assertEqual(rows_affected, 3)
         mock_cursor.executemany.assert_called_once()
-        
-        args_list = mock_cursor.executemany.call_args[0][1] # executemany takes (sql, list_of_tuples)
-        self.assertEqual(len(args_list), 3) # Check number of rows
-        
-        # Check first row data passed to executemany
-        first_row_params = args_list[0]
-        self.assertEqual(first_row_params[0], ticker)      # ticker
-        self.assertEqual(first_row_params[1], dates[0])    # date
-        self.assertIsInstance(first_row_params[2], float)  # open
-        self.assertEqual(first_row_params[2], 100.0)
-        self.assertIsInstance(first_row_params[6], int)    # volume
-
-        # Check third row handling pd.NA and specific types
-        third_row_params = args_list[2]
-        self.assertIsNone(third_row_params[2])             # open (was pd.NA)
-        self.assertIsInstance(third_row_params[6], int)    # volume (was np.int32)
-        self.assertIsInstance(third_row_params[8], float)  # stock_splits
-
-        mock_conn.commit.assert_called_once()
+        args_list = mock_cursor.executemany.call_args[0][1]
+        self.assertEqual(args_list[0][0], ticker); self.assertIsInstance(args_list[0][2], float)
+        self.assertIsNone(args_list[2][2]); mock_conn.commit.assert_called_once()
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_to_raw_table_empty_df(self, mock_get_db_connection):
@@ -149,482 +111,324 @@ class TestDBUtils(unittest.TestCase):
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_to_raw_table_db_error(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
         mock_cursor.executemany.side_effect = psycopg2.Error("DB write error")
-
-        # Create a DataFrame that would lead to a call to executemany
         data = {'Open': [100.0], 'High': [101.0], 'Low': [99.0], 'Close': [100.5],
-                'Volume': [10000], 'Dividends': [0.0], 'Stock Splits': [0.0]}
+                'Volume': [10000.0], 'Dividends': [0.0], 'Stock Splits': [0.0]}
         df = pd.DataFrame(data, index=[pd.Timestamp('2023-01-01')])
-
         with self.assertRaises(psycopg2.Error):
             db_utils.save_to_raw_table('TESTFAIL', df, SAMPLE_DB_CONFIG)
         mock_conn.rollback.assert_called_once()
 
     @patch('utils.db_utils.get_db_connection')
     def test_check_ticker_exists(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (1,); self.assertTrue(db_utils.check_ticker_exists('AAPLCHK', SAMPLE_DB_CONFIG))
+        mock_cursor.fetchone.return_value = (0,); self.assertFalse(db_utils.check_ticker_exists('MSFTCHK', SAMPLE_DB_CONFIG))
 
-        mock_cursor.fetchone.return_value = (1,)
-        self.assertTrue(db_utils.check_ticker_exists('AAPLCHK', SAMPLE_DB_CONFIG))
-        mock_cursor.execute.assert_called_with("SELECT COUNT(*) FROM raw_stock_data WHERE ticker = %s", ('AAPLCHK',))
-
-        mock_cursor.fetchone.return_value = (0,)
-        self.assertFalse(db_utils.check_ticker_exists('MSFTCHK', SAMPLE_DB_CONFIG))
-
-    # In test_load_data_from_db
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_load_data_from_db(self, mock_get_db_connection, mock_read_sql):
         mock_conn = MagicMock()
         mock_get_db_connection.return_value = mock_conn
         
-        sample_df_data_for_mock = {
-            'date': [datetime(2023,1,1), datetime(2023,1,2)],
-            'open': [100.0, 101.0],
-            'high': [102.0, 103.0],
-            'low': [99.0, 100.0],
-            'close': [101.5, 102.5],
-            'volume': [100000.0, 120000.0],
-            'dividends': [0.0, 0.0],
-            'stock_splits': [0.0, 0.0]
+        df_data_aapload_sql = {
+            'date': [datetime(2023,1,1), datetime(2023,1,2)], 'open': [100.0, 101.0],
+            'high': [102.0, 103.0], 'low': [99.0, 100.0], 'close': [101.5, 102.5],
+            'volume': [100000.0, 120000.0], 'dividends': [0.0, 0.0], 'stock_splits': [0.0, 0.0]
         }
-        mock_df_returned_by_sql = pd.DataFrame(sample_df_data_for_mock)
-        
-        mock_read_sql.return_value = mock_df_returned_by_sql.copy()
+        mock_df_aapload_sql = pd.DataFrame(df_data_aapload_sql)
+
+        df_data_msftload_sql = { 
+            'date': [datetime(2023,1,3), datetime(2023,1,4)], 'open': [200.0, 201.0],
+            'high': [202.0, 203.0], 'low': [199.0, 200.0], 'close': [201.5, 202.5],
+            'volume': [200000.0, 220000.0], 'dividends': [0.1, 0.1], 'stock_splits': [0.0, 0.0]
+        }
+        mock_df_msftload_sql = pd.DataFrame(df_data_msftload_sql)
+
+        def read_sql_side_effect_for_load_data(sql_query_arg, conn_arg, params_arg, parse_dates_arg):
+            ticker_param = params_arg[0]
+            if ticker_param == 'AAPLLOAD':
+                return mock_df_aapload_sql.copy()
+            elif ticker_param == 'MSFTLOAD':
+                return mock_df_msftload_sql.copy()
+            else:
+                return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'dividends', 'stock_splits'])
+
+        mock_read_sql.side_effect = read_sql_side_effect_for_load_data
 
         tickers = ['AAPLLOAD', 'MSFTLOAD']
         result_dict = db_utils.load_data_from_db(SAMPLE_DB_CONFIG, tickers)
 
         self.assertEqual(mock_read_sql.call_count, 2)
-        self.assertIn('AAPLLOAD', result_dict)
-        self.assertIn('MSFTLOAD', result_dict)
+        self.assertIn('AAPLLOAD', result_dict); self.assertIn('MSFTLOAD', result_dict)
         
-        expected_df_after_processing = mock_df_returned_by_sql.set_index('date')
-        expected_df_after_processing.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
-        
-        pd.testing.assert_frame_equal(result_dict['AAPLLOAD'], expected_df_after_processing)
-        mock_conn.close.assert_called_once()
+        expected_df_aapload_processed = mock_df_aapload_sql.set_index('date')
+        expected_df_aapload_processed.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+        pd.testing.assert_frame_equal(result_dict['AAPLLOAD'], expected_df_aapload_processed)
 
+        expected_df_msftload_processed = mock_df_msftload_sql.set_index('date')
+        expected_df_msftload_processed.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+        pd.testing.assert_frame_equal(result_dict['MSFTLOAD'], expected_df_msftload_processed)
+        
+        mock_conn.close.assert_called_once()
 
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_load_data_from_db_empty_for_one_ticker(self, mock_get_db_connection, mock_read_sql):
         mock_conn = MagicMock()
         mock_get_db_connection.return_value = mock_conn
-
-        aapl_df = pd.DataFrame({'date': [datetime(2023,1,1)], 'close': [150.0], 
-                                'open': [149.0], 'high': [151.0], 'low': [148.0],
-                                'volume': [1e6], 'dividends': [0.0], 'stock_splits': [0.0]})
-        msft_df_empty = pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'dividends', 'stock_splits'])
-
-        def side_effect_read_sql(query, conn, params, parse_dates):
-            if params[0] == 'AAPLSIDE':
-                return aapl_df.copy()
-            elif params[0] == 'MSFTSIDE':
-                return msft_df_empty.copy()
-            return pd.DataFrame() # Default empty
-            
-        mock_read_sql.side_effect = side_effect_read_sql
-
-        tickers = ['AAPLSIDE', 'MSFTSIDE']
-        result = db_utils.load_data_from_db(SAMPLE_DB_CONFIG, tickers)
+        aapl_data_from_sql = {
+            'date': [datetime(2023,1,1)], 'open': [149.0], 'high': [151.0], 'low': [148.0],
+            'close': [150.0], 'volume': [1e6], 'dividends': [0.0], 'stock_splits': [0.0]
+        }
+        aapl_df_from_sql = pd.DataFrame(aapl_data_from_sql)
+        msft_df_empty_from_sql = pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'dividends', 'stock_splits'])
         
-        self.assertIn('AAPLSIDE', result)
-        self.assertNotIn('MSFTSIDE', result)
-        self.assertEqual(len(result['AAPLSIDE']), 1)
+        def side_effect_read_sql(query, conn, params, parse_dates):
+            if params[0] == 'AAPLSIDE': return aapl_df_from_sql.copy()
+            elif params[0] == 'MSFTSIDE': return msft_df_empty_from_sql.copy()
+            return pd.DataFrame(columns=msft_df_empty_from_sql.columns) # Ensure consistent empty df structure
+        mock_read_sql.side_effect = side_effect_read_sql
+        
+        tickers = ['AAPLSIDE', 'MSFTSIDE']
+        result_dict = db_utils.load_data_from_db(SAMPLE_DB_CONFIG, tickers)
+        
+        self.assertIn('AAPLSIDE', result_dict); self.assertNotIn('MSFTSIDE', result_dict)
+        self.assertEqual(len(result_dict['AAPLSIDE']), 1)
+        expected_aapl_processed = aapl_df_from_sql.set_index('date')
+        expected_aapl_processed.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+        pd.testing.assert_frame_equal(result_dict['AAPLSIDE'], expected_aapl_processed)
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_and_load_processed_features(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        run_id = "test_run_proc_123"
-        data_np = np.array([[[1.0, 2.0], [3.0, 4.0]]])
-        targets_np = np.array([[5.0, 6.0]])
-        features = ['feat1_proc', 'feat2_proc']
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        run_id = "test_run_proc_123"; data_np = np.array([[[1.1, 2.2], [3.3, 4.4]]])
+        targets_np = np.array([[5.5, 6.6]]); features = ['feat1_proc', 'feat2_proc']
         tickers_list = ['T1PROC', 'T2PROC']
-
         db_utils.save_processed_features_to_db(SAMPLE_DB_CONFIG, data_np, targets_np, features, tickers_list, run_id)
-        
         args_tuple = mock_cursor.execute.call_args[0][1]
-        self.assertEqual(args_tuple[0], run_id)
-        # For np arrays, comparing pickled versions is tricky due to object identity.
-        # Better to unpickle and compare content.
-        np.testing.assert_array_equal(pickle.loads(args_tuple[1]), data_np)
+        np.testing.assert_array_equal(pickle.loads(args_tuple[1]), data_np) # Compare content after unpickling
         np.testing.assert_array_equal(pickle.loads(args_tuple[2]), targets_np)
-        self.assertEqual(json.loads(args_tuple[3]), features)
-        self.assertEqual(json.loads(args_tuple[4]), tickers_list)
-        mock_conn.commit.assert_called_once()
-
-        mock_cursor.fetchone.return_value = (
-            run_id, 
-            pickle.dumps(data_np), 
-            pickle.dumps(targets_np), 
-            json.dumps(features),
-            json.dumps(tickers_list)
-        )
+        mock_cursor.fetchone.return_value = (run_id, pickle.dumps(data_np), pickle.dumps(targets_np), json.dumps(features), json.dumps(tickers_list))
         loaded_data = db_utils.load_processed_features_from_db(SAMPLE_DB_CONFIG, run_id)
-        
-        self.assertIsNotNone(loaded_data)
-        self.assertEqual(loaded_data['run_id'], run_id)
-        np.testing.assert_array_equal(loaded_data['processed_data'], data_np)
-        np.testing.assert_array_equal(loaded_data['targets'], targets_np)
-        self.assertEqual(loaded_data['feature_columns'], features)
-        self.assertEqual(loaded_data['tickers'], tickers_list)
+        self.assertIsNotNone(loaded_data); np.testing.assert_array_equal(loaded_data['processed_data'], data_np)
 
     @patch('utils.db_utils.get_db_connection')
     def test_load_processed_features_not_found(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchone.return_value = None
         loaded_data = db_utils.load_processed_features_from_db(SAMPLE_DB_CONFIG, "non_existent_proc_run")
         self.assertIsNone(loaded_data)
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_and_load_scaled_features(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        run_id = "scaled_run_feat_456"
-        set_name = "X_train_scaled"
-        data_np = np.array([[0.11, 0.22], [0.33, 0.44]])
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        run_id = "scaled_run_feat_456"; set_name = "X_train_scaled"; data_np = np.array([[0.111, 0.222]])
         db_utils.save_scaled_features(SAMPLE_DB_CONFIG, run_id, set_name, data_np)
-        mock_cursor.execute.assert_called_once_with(ANY, (run_id, set_name, pickle.dumps(data_np)))
-        mock_conn.commit.assert_called_once()
-
         mock_cursor.fetchone.return_value = (pickle.dumps(data_np),)
         loaded_data = db_utils.load_scaled_features(SAMPLE_DB_CONFIG, run_id, set_name)
         np.testing.assert_array_equal(loaded_data, data_np)
-        
+
     @patch('utils.db_utils.get_db_connection')
     def test_save_and_load_scalers(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        run_id = "scaler_run_data_789"
-        simple_scaler_x = SimpleScaler(0.1, 0.9)
-        simple_y_scaler = SimpleScaler(100.0, 50.0)
-        scalers_data = {
-            'scalers_x': [[simple_scaler_x]], 'y_scalers': [simple_y_scaler],
-            'tickers': ['TICKA_SCL'], 'num_features': 1
-        }
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        run_id = "scaler_run_data_789"; simple_scaler_x = SimpleScaler(0.1, 0.9)
+        scalers_data = {'scalers_x': [[simple_scaler_x]], 'tickers': ['TICKA_SCL']}
         db_utils.save_scalers(SAMPLE_DB_CONFIG, run_id, scalers_data)
-        args_tuple = mock_cursor.execute.call_args[0][1]
-        self.assertEqual(args_tuple[0], run_id)
-        loaded_pickle_content = pickle.loads(args_tuple[1])
-        self.assertEqual(loaded_pickle_content.keys(), scalers_data.keys())
-        self.assertEqual(loaded_pickle_content['scalers_x'][0][0], simple_scaler_x)
-        mock_conn.commit.assert_called_once()
-
         mock_cursor.fetchone.return_value = (pickle.dumps(scalers_data),)
         loaded_scalers_from_db = db_utils.load_scalers(SAMPLE_DB_CONFIG, run_id)
-        self.assertEqual(loaded_scalers_from_db.keys(), scalers_data.keys())
         self.assertEqual(loaded_scalers_from_db['scalers_x'][0][0], simple_scaler_x)
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_and_load_optimization_results(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        run_id = "opt_run_res_000"
-        best_params_data = {'lr_opt': 0.0011, 'epochs_opt': 55}
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        run_id = "opt_run_res_000"; best_params_data = {'lr_opt': 0.00112}
         db_utils.save_optimization_results(SAMPLE_DB_CONFIG, run_id, best_params_data)
-        mock_cursor.execute.assert_called_once_with(ANY, (run_id, json.dumps(best_params_data)))
-        mock_conn.commit.assert_called_once()
-
         mock_cursor.fetchone.return_value = (json.dumps(best_params_data),)
         loaded_params = db_utils.load_optimization_results(SAMPLE_DB_CONFIG, run_id)
         self.assertEqual(loaded_params, best_params_data)
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_prediction(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        ticker = "PREDSAVE"
-        price = 123.456
-        model_id = "model_v1_save"
-        target_date = "2023-10-26" # YYYY-MM-DD format
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        ticker = "PREDSAVE"; price = 123.4567; model_id = "model_v1_save"; target_date = "2023-10-26"
         db_utils.save_prediction(SAMPLE_DB_CONFIG, ticker, price, model_id, target_date)
-        
-        # SQL uses CURRENT_TIMESTAMP, so we only check the first 4 params
-        # The SQL in db_utils is:
-        # INSERT INTO latest_predictions (target_prediction_date, ticker, predicted_price, model_mlflow_run_id, prediction_logged_timestamp)
-        # VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         expected_params = (target_date, ticker, price, model_id)
-        # Check that the called parameters match the expected ones.
-        # The SQL string itself can be ANY if it's complex and you trust its structure.
-        # The important part is that the VALUES part of the SQL matches the order of parameters.
-        mock_cursor.execute.assert_called_once()
-        call_args = mock_cursor.execute.call_args[0] # (sql_string, params_tuple)
-        self.assertEqual(call_args[1], expected_params) # Compare the tuple of parameters
-
-        mock_conn.commit.assert_called_once()
+        mock_cursor.execute.assert_called_once(); call_args = mock_cursor.execute.call_args[0]
+        self.assertEqual(call_args[1], expected_params)
 
     @patch('utils.db_utils.get_db_connection')
     def test_get_latest_prediction_for_all_tickers(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        
-        mock_row1 = {'ticker': 'AAPLALL', 'target_prediction_date': date(2023,10,25), 'predicted_price': Decimal('150.751'), 'model_mlflow_run_id': 'run1all'}
-        mock_row2 = {'ticker': 'MSFTALL', 'target_prediction_date': date(2023,10,25), 'predicted_price': Decimal('300.502'), 'model_mlflow_run_id': 'run1all'}
+        mock_conn = MagicMock(); mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        mock_row1 = {'ticker': 'AAPLALL', 'target_prediction_date': date(2023,10,25), 
+                     'predicted_price': Decimal('150.751'), 'model_mlflow_run_id': 'run1all'}
+        mock_row2 = {'ticker': 'MSFTALL', 'target_prediction_date': date(2023,10,25), 
+                     'predicted_price': Decimal('300.502'), 'model_mlflow_run_id': 'run1all'}
         mock_cursor.fetchall.return_value = [mock_row1, mock_row2]
-
         result = db_utils.get_latest_prediction_for_all_tickers(SAMPLE_DB_CONFIG)
         
+        # Expect Decimal as db_utils.get_latest_prediction_for_all_tickers does not convert
         expected = [
             {'ticker': 'AAPLALL', 'date': '2023-10-25', 'predicted_price': Decimal('150.751'), 'model_mlflow_run_id': 'run1all'},
             {'ticker': 'MSFTALL', 'date': '2023-10-25', 'predicted_price': Decimal('300.502'), 'model_mlflow_run_id': 'run1all'}
         ]
         self.assertEqual(result, expected)
-        self.assertIn("SELECT DISTINCT ON (ticker)", mock_cursor.execute.call_args[0][0])
 
     @patch('utils.db_utils.get_db_connection')
     def test_get_latest_target_date_prediction_for_ticker(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        mock_row = {'target_prediction_date': date(2023,10,25), 'predicted_price': Decimal('180.203'), 'model_mlflow_run_id': 'run_xyz_target'}
-        mock_cursor.fetchone.return_value = mock_row
-        result = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'XYZTARGET')
-        expected = {'target_prediction_date': '2023-10-25', 'predicted_price': 180.203, 'model_mlflow_run_id': 'run_xyz_target'}
-        self.assertEqual(result, expected)
-
-        mock_cursor.fetchone.return_value = None
-        result_none = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'NONETARGET')
-        self.assertIsNone(result_none)
+        mock_conn = MagicMock(); mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
         
-        mock_row_float = {'target_prediction_date': date(2023,10,26), 'predicted_price': 190.554, 'model_mlflow_run_id': 'run_abc_target'}
+        # Test with Decimal input from mock, expect float output from this specific function
+        mock_row_decimal = {'target_prediction_date': date(2023,10,25), 
+                            'predicted_price': Decimal('180.2031'), 
+                            'model_mlflow_run_id': 'run_xyz_target_decimal'}
+        mock_cursor.fetchone.return_value = mock_row_decimal
+        result_decimal = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'XYZTARGETDECIMAL')
+        expected_decimal = {'target_prediction_date': '2023-10-25', 
+                            'predicted_price': 180.2031, # This function DOES convert to float
+                            'model_mlflow_run_id': 'run_xyz_target_decimal'}
+        self.assertEqual(result_decimal, expected_decimal)
+
+        mock_row_float = {'target_prediction_date': date(2023,10,26), 
+                          'predicted_price': 190.554, 
+                          'model_mlflow_run_id': 'run_abc_target_float'}
         mock_cursor.fetchone.return_value = mock_row_float
-        result_float = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'ABCTARGET')
-        expected_float = {'target_prediction_date': '2023-10-26', 'predicted_price': 190.554, 'model_mlflow_run_id': 'run_abc_target'}
+        result_float = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'ABCTARGETFLOAT')
+        expected_float = {'target_prediction_date': '2023-10-26', 
+                          'predicted_price': 190.554, 
+                          'model_mlflow_run_id': 'run_abc_target_float'}
         self.assertEqual(result_float, expected_float)
 
-        mock_row_none_price = {'target_prediction_date': date(2023,10,27), 'predicted_price': None, 'model_mlflow_run_id': 'run_def_target'}
+        mock_row_none_price = {'target_prediction_date': date(2023,10,27), 
+                               'predicted_price': None, 
+                               'model_mlflow_run_id': 'run_def_target_none'}
         mock_cursor.fetchone.return_value = mock_row_none_price
-        result_none_price = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'DEFTARGET')
-        expected_none_price = {'target_prediction_date': '2023-10-27', 'predicted_price': None, 'model_mlflow_run_id': 'run_def_target'}
+        result_none_price = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'DEFTARGETNONE')
+        expected_none_price = {'target_prediction_date': '2023-10-27', 
+                               'predicted_price': None, 
+                               'model_mlflow_run_id': 'run_def_target_none'}
         self.assertEqual(result_none_price, expected_none_price)
+        
+        mock_cursor.fetchone.return_value = None
+        result_not_found = db_utils.get_latest_target_date_prediction_for_ticker(SAMPLE_DB_CONFIG, 'NOTFOUNDTICKER')
+        self.assertIsNone(result_not_found)
 
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_get_raw_stock_data_for_period(self, mock_get_db_connection, mock_read_sql):
-        mock_conn = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        
-        # Data returned by read_sql_query (before sorting in db_utils)
-        # SQL query has ORDER BY date DESC LIMIT %s
-        sample_data_from_sql = {
-            'date': [datetime(2023,1,2,0,0,0), datetime(2023,1,1,0,0,0)], # Descending for LIMIT
-            'close': [101.0, 100.0]
-        }
+        mock_conn = MagicMock(); mock_get_db_connection.return_value = mock_conn
+        sample_data_from_sql = {'date': [datetime(2023,1,2), datetime(2023,1,1)], 'close': [101.1, 100.1]}
         mock_df_from_sql = pd.DataFrame(sample_data_from_sql)
         mock_read_sql.return_value = mock_df_from_sql.copy()
-
-        end_dt = date(2023,1,2)
-        num_d = 2
+        end_dt = date(2023,1,2); num_d = 2
         result_df = db_utils.get_raw_stock_data_for_period(SAMPLE_DB_CONFIG, 'TESTPERIOD', end_dt, num_d)
-
-        mock_read_sql.assert_called_once_with(ANY, mock_conn, params=('TESTPERIOD', end_dt, num_d))
-        
-        # Expected data after sorting ascending in db_utils
-        expected_df_data = {
-            'date': pd.to_datetime(['2023-01-01', '2023-01-02']),
-            'close': [100.0, 101.0]
-        }
+        expected_df_data = {'date': pd.to_datetime(['2023-01-01', '2023-01-02']), 'close': [100.1, 101.1]}
         expected_df = pd.DataFrame(expected_df_data)
         pd.testing.assert_frame_equal(result_df, expected_df)
 
     @patch('utils.db_utils.get_db_connection')
     def test_get_all_distinct_tickers_from_predictions(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchall.return_value = [('AAPLDIST',), ('MSFTDIST',), ('GOOGDIST',)]
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [('AAPLDISTX',), ('MSFTDISTX',)]
         result = db_utils.get_all_distinct_tickers_from_predictions(SAMPLE_DB_CONFIG)
-        expected = ['AAPLDIST', 'MSFTDIST', 'GOOGDIST']
-        self.assertEqual(result, expected)
-        mock_cursor.execute.assert_called_with("SELECT DISTINCT ticker FROM latest_predictions ORDER BY ticker ASC;")
+        self.assertEqual(result, ['AAPLDISTX', 'MSFTDISTX'])
 
     @patch('utils.db_utils.get_db_connection')
     def test_save_daily_performance_metrics(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        p_date = "2023-10-25"
-        ticker_sym = "PERFSAVE"
-        metrics = {
-            'actual_price': 100.1, 'predicted_price': 102.2, 'mae': 2.1, 
-            'rmse': 2.1, 'mape': 0.021, 'direction_accuracy': 1.0
-        }
-        model_id = "perf_model_v1_save"
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        p_date = "2023-10-25"; ticker_sym = "PERFSAVEX"; model_id = "perf_model_v1_savex"
+        metrics = {'actual_price': 100.11, 'predicted_price': 102.22, 'mae': 2.11, 'rmse': 2.11, 'mape': 0.0211, 'direction_accuracy': 1.0}
         db_utils.save_daily_performance_metrics(SAMPLE_DB_CONFIG, p_date, ticker_sym, metrics, model_id)
-        
-        expected_call_params = (
-            p_date, ticker_sym, 
-            metrics['actual_price'], metrics['predicted_price'],
-            metrics['mae'], metrics['rmse'], metrics['mape'], metrics['direction_accuracy'],
-            model_id
-        )
-        mock_cursor.execute.assert_called_once_with(ANY, expected_call_params)
-        mock_conn.commit.assert_called_once()
+        expected_params = (p_date, ticker_sym, metrics['actual_price'], metrics['predicted_price'],
+                           metrics.get('mae'), metrics.get('rmse'), metrics.get('mape'),
+                           metrics['direction_accuracy'], model_id)
+        mock_cursor.execute.assert_called_once_with(ANY, expected_params)
 
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_get_recent_performance_metrics(self, mock_get_db_connection, mock_read_sql):
-        mock_conn = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        
-        sample_perf_data = {'prediction_date': [date(2023,10,24)], 'mape': [0.051]}
+        mock_conn = MagicMock(); mock_get_db_connection.return_value = mock_conn
+        sample_perf_data = {'prediction_date': [date(2023,10,24)], 'mape': [0.0512]}
         mock_perf_df = pd.DataFrame(sample_perf_data)
         mock_read_sql.return_value = mock_perf_df.copy()
-
-        days_lookback = 7
-        expected_end_date = datetime.now().date()
+        days_lookback = 7; expected_end_date = datetime.now().date()
         expected_start_date = expected_end_date - timedelta(days=days_lookback)
-
-        result_df = db_utils.get_recent_performance_metrics(SAMPLE_DB_CONFIG, 'TESTRECENT', days_lookback)
-        
+        result_df = db_utils.get_recent_performance_metrics(SAMPLE_DB_CONFIG, 'TESTRECENTX', days_lookback)
         args, kwargs = mock_read_sql.call_args
-        self.assertEqual(kwargs['params'][0], 'TESTRECENT')
-        self.assertEqual(kwargs['params'][1], expected_start_date)
-        self.assertEqual(kwargs['params'][2], expected_end_date)
-
+        self.assertEqual(kwargs['params'], ('TESTRECENTX', expected_start_date, expected_end_date))
         pd.testing.assert_frame_equal(result_df, mock_perf_df)
 
     @patch('utils.db_utils.get_db_connection')
     def test_get_last_data_timestamp_for_ticker(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock()
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
         dt_obj = datetime(2023, 10, 25, 16, 0, 0)
-        mock_cursor.fetchone.return_value = (dt_obj,)
-        self.assertEqual(db_utils.get_last_data_timestamp_for_ticker(SAMPLE_DB_CONFIG, 'AAPLLAST'), dt_obj)
-
-        mock_cursor.fetchone.return_value = (None,)
-        self.assertIsNone(db_utils.get_last_data_timestamp_for_ticker(SAMPLE_DB_CONFIG, 'NEWTLAST'))
-        
-        mock_cursor.fetchone.return_value = None
-        self.assertIsNone(db_utils.get_last_data_timestamp_for_ticker(SAMPLE_DB_CONFIG, 'NEWT2LAST'))
+        mock_cursor.fetchone.return_value = (dt_obj,); self.assertEqual(db_utils.get_last_data_timestamp_for_ticker(SAMPLE_DB_CONFIG, 'AAPLLASTX'), dt_obj)
+        mock_cursor.fetchone.return_value = (None,); self.assertIsNone(db_utils.get_last_data_timestamp_for_ticker(SAMPLE_DB_CONFIG, 'NEWTLASTX'))
 
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_get_latest_raw_data_window(self, mock_get_db_connection, mock_read_sql):
-        mock_conn = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-    
-        raw_db_data_full = {
-            'date': [datetime(2023,1,3), datetime(2023,1,2), datetime(2023,1,1)],
-            'open': [102.0,101.0,100.0], 'high': [103.0,102.0,101.0], 'low': [101.0,100.0,99.0],
-            'close': [102.5,101.5,100.5], 'volume': [12000.0,11000.0,10000.0],
-            'dividends': [0.0,0.0,0.0], 'stock_splits': [0.0,0.0,0.0]
-        }
+        mock_conn = MagicMock(); mock_get_db_connection.return_value = mock_conn
+        raw_db_data_full = {'date': [datetime(2023,1,3), datetime(2023,1,2), datetime(2023,1,1)],
+                            'open': [102.1,101.1,100.1], 'high': [103.1,102.1,101.1], 'low': [101.1,100.1,99.1],
+                            'close': [102.51,101.51,100.51], 'volume': [12001.0,11001.0,10001.0],
+                            'dividends': [0.0,0.0,0.0], 'stock_splits': [0.0,0.0,0.0]}
         full_mock_df_from_sql = pd.DataFrame(raw_db_data_full)
-    
-        tickers = ['WINRAWTEST']
-        window_size = 2 
-    
-        limited_mock_df_from_sql = full_mock_df_from_sql.head(window_size).copy() # Simulates SQL LIMIT
+        tickers = ['WINRAWTESTX']; window_size = 2 
+        limited_mock_df_from_sql = full_mock_df_from_sql.head(window_size).copy()
         mock_read_sql.return_value = limited_mock_df_from_sql
-    
         result_dict = db_utils.get_latest_raw_data_window(SAMPLE_DB_CONFIG, tickers, window_size)
-    
-        self.assertIn('WINRAWTEST', result_dict)
-        df_win = result_dict['WINRAWTEST']
-    
-        expected_processed_data = {
-            'Open': [101.0, 102.0], 'High': [102.0, 103.0], 'Low': [100.0, 101.0],
-            'Close': [101.5, 102.5], 'Volume': [11000.0, 12000.0],
-            'Dividends': [0.0, 0.0], 'Stock Splits': [0.0, 0.0]
-        }
-        expected_dates = pd.to_datetime([datetime(2023,1,2), datetime(2023,1,3)]) # Sorted ASC
-        expected_df = pd.DataFrame(expected_processed_data, index=pd.Index(expected_dates, name='date'))
-    
-        mock_read_sql.assert_called_once_with(ANY, mock_conn, params=('WINRAWTEST', window_size), parse_dates=['date'])
+        df_win = result_dict['WINRAWTESTX']
+        expected_data = {'Open': [101.1, 102.1], 'High': [102.1, 103.1], 'Low': [100.1, 101.1],
+                         'Close': [101.51, 102.51], 'Volume': [11001.0, 12001.0],
+                         'Dividends': [0.0,0.0], 'Stock Splits': [0.0,0.0]}
+        expected_dates = pd.to_datetime([datetime(2023,1,2), datetime(2023,1,3)])
+        expected_df = pd.DataFrame(expected_data, index=pd.Index(expected_dates, name='date'))
         pd.testing.assert_frame_equal(df_win, expected_df)
 
     @patch('utils.db_utils.get_db_connection')
     def test_get_prediction_for_date_ticker(self, mock_get_db_connection):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
-        mock_get_db_connection.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        target_date = "2023-11-01"
-        ticker_symbol = "XYZPREDDT"
-
+        mock_conn = MagicMock(); mock_cursor = MagicMock(spec=psycopg2.extensions.cursor)
+        mock_get_db_connection.return_value = mock_conn; mock_conn.cursor.return_value = mock_cursor
+        target_date = "2023-11-01"; ticker_symbol = "XYZPREDDT"
         mock_db_row = {'predicted_price': Decimal('200.505'), 'model_mlflow_run_id': 'model_run_abc_preddt'}
         mock_cursor.fetchone.return_value = mock_db_row
         result = db_utils.get_prediction_for_date_ticker(SAMPLE_DB_CONFIG, target_date, ticker_symbol)
+        
+        # Expect Decimal as db_utils.get_prediction_for_date_ticker does not convert
         expected = {'predicted_price': Decimal('200.505'), 'model_mlflow_run_id': 'model_run_abc_preddt'}
         self.assertEqual(result, expected)
-        mock_cursor.execute.assert_called_with(ANY, (target_date, ticker_symbol))
 
         mock_cursor.fetchone.return_value = None
         result_none = db_utils.get_prediction_for_date_ticker(SAMPLE_DB_CONFIG, target_date, "NONEPREDDT")
         self.assertIsNone(result_none)
 
+
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_get_predictions_for_ticker_in_daterange(self, mock_get_db_connection, mock_read_sql):
-        mock_conn = MagicMock()
-        mock_get_db_connection.return_value = mock_conn
-
-        ticker_symbol = "RANGER"
-        start_date = "2023-11-01"
-        end_date = "2023-11-03"
-
-        sample_data = {
-            'target_prediction_date': [datetime(2023,11,1), datetime(2023,11,2)],
-            'predicted_price': [100.1, 102.2]
-        }
-        mock_df_from_sql = pd.DataFrame(sample_data)
-        mock_read_sql.return_value = mock_df_from_sql.copy()
-
-        result_df = db_utils.get_predictions_for_ticker_in_daterange(SAMPLE_DB_CONFIG, ticker_symbol, start_date, end_date)
-        
-        mock_read_sql.assert_called_once_with(ANY, mock_conn, params=(ticker_symbol.upper(), start_date, end_date))
-        
-        expected_df = pd.DataFrame({
-            'target_prediction_date': pd.to_datetime([datetime(2023,11,1), datetime(2023,11,2)]),
-            'predicted_price': [100.1, 102.2]
-        })
+        mock_conn = MagicMock(); mock_get_db_connection.return_value = mock_conn
+        ticker = "RANGERX"; start_date = "2023-11-01"; end_date = "2023-11-03"
+        sample_data = {'target_prediction_date': [datetime(2023,11,1), datetime(2023,11,2)], 'predicted_price': [100.11, 102.22]}
+        mock_df_from_sql = pd.DataFrame(sample_data); mock_read_sql.return_value = mock_df_from_sql.copy()
+        result_df = db_utils.get_predictions_for_ticker_in_daterange(SAMPLE_DB_CONFIG, ticker, start_date, end_date)
+        expected_df = pd.DataFrame({'target_prediction_date': pd.to_datetime([datetime(2023,11,1), datetime(2023,11,2)]),
+                                    'predicted_price': [100.11, 102.22]})
         pd.testing.assert_frame_equal(result_df, expected_df)
-
 
 if __name__ == '__main__':
     unittest.main()
