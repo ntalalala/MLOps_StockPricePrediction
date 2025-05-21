@@ -178,34 +178,40 @@ class TestDBUtils(unittest.TestCase):
         mock_cursor.fetchone.return_value = (0,)
         self.assertFalse(db_utils.check_ticker_exists('MSFTCHK', SAMPLE_DB_CONFIG))
 
+    # In test_load_data_from_db
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
     def test_load_data_from_db(self, mock_get_db_connection, mock_read_sql):
         mock_conn = MagicMock()
         mock_get_db_connection.return_value = mock_conn
         
-        sample_df_data = {
+        sample_df_data_for_mock = {
             'date': [datetime(2023,1,1), datetime(2023,1,2)],
-            'open': [100.0, 101.0], 'high': [102.0, 103.0], 'low': [99.0, 100.0],
-            'close': [101.5, 102.5], 'volume': [100000.0, 120000.0], # Ensure float for volume if REAL
-            'dividends': [0.0, 0.0], 'stock_splits': [0.0, 0.0]
+            'open': [100.0, 101.0],
+            'high': [102.0, 103.0],
+            'low': [99.0, 100.0],
+            'close': [101.5, 102.5],
+            'volume': [100000.0, 120000.0],
+            'dividends': [0.0, 0.0],
+            'stock_splits': [0.0, 0.0]
         }
-        mock_df = pd.DataFrame(sample_df_data)
+        mock_df_returned_by_sql = pd.DataFrame(sample_df_data_for_mock)
         
-        mock_read_sql.return_value = mock_df.copy()
+        mock_read_sql.return_value = mock_df_returned_by_sql.copy()
 
         tickers = ['AAPLLOAD', 'MSFTLOAD']
-        result = db_utils.load_data_from_db(SAMPLE_DB_CONFIG, tickers)
+        result_dict = db_utils.load_data_from_db(SAMPLE_DB_CONFIG, tickers)
 
         self.assertEqual(mock_read_sql.call_count, 2)
-        self.assertIn('AAPLLOAD', result)
-        self.assertIn('MSFTLOAD', result)
+        self.assertIn('AAPLLOAD', result_dict)
+        self.assertIn('MSFTLOAD', result_dict)
         
-        expected_df_structure = mock_df.set_index('date').rename(
-            columns=dict(zip(mock_df.columns[1:], ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']))
-        )
-        pd.testing.assert_frame_equal(result['AAPLLOAD'], expected_df_structure)
+        expected_df_after_processing = mock_df_returned_by_sql.set_index('date')
+        expected_df_after_processing.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+        
+        pd.testing.assert_frame_equal(result_dict['AAPLLOAD'], expected_df_after_processing)
         mock_conn.close.assert_called_once()
+
 
     @patch('utils.db_utils.pd.read_sql_query')
     @patch('utils.db_utils.get_db_connection')
@@ -392,8 +398,8 @@ class TestDBUtils(unittest.TestCase):
         result = db_utils.get_latest_prediction_for_all_tickers(SAMPLE_DB_CONFIG)
         
         expected = [
-            {'ticker': 'AAPLALL', 'date': '2023-10-25', 'predicted_price': 150.751, 'model_mlflow_run_id': 'run1all'},
-            {'ticker': 'MSFTALL', 'date': '2023-10-25', 'predicted_price': 300.502, 'model_mlflow_run_id': 'run1all'}
+            {'ticker': 'AAPLALL', 'date': '2023-10-25', 'predicted_price': Decimal('150.751'), 'model_mlflow_run_id': 'run1all'},
+            {'ticker': 'MSFTALL', 'date': '2023-10-25', 'predicted_price': Decimal('300.502'), 'model_mlflow_run_id': 'run1all'}
         ]
         self.assertEqual(result, expected)
         self.assertIn("SELECT DISTINCT ON (ticker)", mock_cursor.execute.call_args[0][0])
@@ -584,7 +590,7 @@ class TestDBUtils(unittest.TestCase):
         mock_db_row = {'predicted_price': Decimal('200.505'), 'model_mlflow_run_id': 'model_run_abc_preddt'}
         mock_cursor.fetchone.return_value = mock_db_row
         result = db_utils.get_prediction_for_date_ticker(SAMPLE_DB_CONFIG, target_date, ticker_symbol)
-        expected = {'predicted_price': 200.505, 'model_mlflow_run_id': 'model_run_abc_preddt'}
+        expected = {'predicted_price': Decimal('200.505'), 'model_mlflow_run_id': 'model_run_abc_preddt'}
         self.assertEqual(result, expected)
         mock_cursor.execute.assert_called_with(ANY, (target_date, ticker_symbol))
 
