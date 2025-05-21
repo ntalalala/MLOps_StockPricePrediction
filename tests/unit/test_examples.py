@@ -148,9 +148,15 @@ class TestDBUtils(unittest.TestCase):
         }
         mock_df_msftload_sql = pd.DataFrame(df_data_msftload_sql)
 
-        # MODIFIED side_effect function signature
+        # CORRECTED side_effect function signature
         def read_sql_side_effect_for_load_data(sql, con, params=None, parse_dates=None, **kwargs):
-            ticker_param = params[0]
+            # 'sql' is the query string
+            # 'con' is the connection object
+            # 'params' is the tuple, e.g., ('AAPLLOAD',)
+            # 'parse_dates' is the list, e.g., ['date']
+            # '**kwargs' collects any other keyword arguments
+            
+            ticker_param = params[0] # The ticker 't'
             if ticker_param == 'AAPLLOAD':
                 return mock_df_aapload_sql.copy()
             elif ticker_param == 'MSFTLOAD':
@@ -188,7 +194,7 @@ class TestDBUtils(unittest.TestCase):
         aapl_df_from_sql = pd.DataFrame(aapl_data_from_sql)
         msft_df_empty_from_sql = pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'dividends', 'stock_splits'])
         
-        # MODIFIED side_effect function signature
+        # CORRECTED side_effect function signature
         def side_effect_read_sql(sql, con, params=None, parse_dates=None, **kwargs):
             ticker_param = params[0] 
             if ticker_param == 'AAPLSIDE': return aapl_df_from_sql.copy()
