@@ -47,6 +47,7 @@ jobs:
           pytest tests/unit
 
       # VALIDATE AIRFLOW DAGS
+
       - name: Validate Airflow DAG definitions
         run: |
           export AIRFLOW_HOME=$(pwd)/.ci_airflow_home 
@@ -62,32 +63,100 @@ jobs:
 
           echo "Individually testing DAG file Python syntax and Airflow import errors..."
           FAIL_FLAG=0
-          find ./airflow/dags -name "*.py" -print0 | while IFS= read -r -d $'\0' dag_file; do
+          while IFS= read -r -d $'\0' dag_file; do
             echo "--- Validating DAG file: $dag_file ---"
-           
+
             if ! python -m ast "$dag_file"; then
               echo "Python syntax ERROR in $dag_file"
-              FAIL_FLAG=1 
+              FAIL_FLAG=1
             else
               echo "Python syntax OK for $dag_file"
-              IMPORT_ERRORS=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1) # Capture stdout and stderr
-              
-              if [[ -n "$IMPORT_ERRORS" && ! "$IMPORT_ERRORS" =~ "No import errors" && ! "$IMPORT_ERRORS" =~ "DAGS_FOLDER" && ! "$IMPORT_ERRORS" =~ "dag_id" ]]; then
+              # Capture stderr to a variable, stdout to another, or combine them
+              # For simplicity, let's combine. If you need to distinguish:
+              # IMPORT_OUTPUT=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1)
+              # Or more robustly:
+              # output_and_errors=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1)
+              # IMPORT_ERRORS=$(echo "$output_and_errors" | grep -v "UserWarning: Could not import graphviz") # Attempt to filter out graphviz
+              # Alternatively, just use the combined output and adjust the if
+              IMPORT_ERRORS=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1)
+
+              # Refined condition:
+              # "No data found" from list-import-errors --subdir is OK.
+              # "No import errors" from a general list-import-errors is OK.
+              # Graphviz warning is OK.
+              # Check if IMPORT_ERRORS is non-empty AND doesn't solely consist of known non-errors.
+              # A simple approach: check if it contains actual error keywords or if it's not one of the "good" messages.
+
+              IS_REAL_ERROR=true
+              if [[ -z "$IMPORT_ERRORS" || "$IMPORT_ERRORS" =~ "No import errors" || "$IMPORT_ERRORS" =~ "No data found" ]]; then
+                  IS_REAL_ERROR=false
+              fi
+              # If graphviz is the *only* thing, also not a real error
+              CLEANED_IMPORT_ERRORS=$(echo "$IMPORT_ERRORS" | grep -v "UserWarning: Could not import graphviz" | grep -v "airflow/cli/commands/dag_command.py" | sed '/^\s*$/d') # Remove graphviz and blank lines
+              if [[ -z "$CLEANED_IMPORT_ERRORS" || "$CLEANED_IMPORT_ERRORS" =~ "No import errors" || "$CLEANED_IMPORT_ERRORS" =~ "No data found" ]]; then
+                  IS_REAL_ERROR=false
+              fi
+
+
+              if $IS_REAL_ERROR; then
                 echo "Airflow import ERRORS found in $dag_file:"
-                echo "$IMPORT_ERRORS"
-                FAIL_FLAG=1 
+                echo "$IMPORT_ERRORS" # Show the raw output for debugging
+                FAIL_FLAG=1
               else
-                echo "No critical Airflow import errors detected for $dag_file (or only informational output)."
+                echo "No critical Airflow import errors detected for $dag_file."
               fi
             fi
             echo "--- Finished validating $dag_file ---"
-          done
+          done < <(find ./airflow/dags -name "*.py" -print0) # Process substitution
 
           if [ "$FAIL_FLAG" -eq 1 ]; then
             echo "One or more DAG validation checks failed."
             exit 1
           fi
           echo "All DAGs validated successfully."
+        
+      # # VALIDATE AIRFLOW DAGS
+      # - name: Validate Airflow DAG definitions
+      #   run: |
+      #     export AIRFLOW_HOME=$(pwd)/.ci_airflow_home 
+      #     mkdir -p $AIRFLOW_HOME
+          
+      #     echo "Initializing Airflow metadata database (temporary for CI)..."
+      #     airflow db migrate
+
+      #     export PYTHONPATH=$(pwd):$(pwd)/src:$PYTHONPATH
+          
+      #     echo "Attempting to list DAGs (initial parse check)..."
+      #     airflow dags list
+
+      #     echo "Individually testing DAG file Python syntax and Airflow import errors..."
+      #     FAIL_FLAG=0
+      #     find ./airflow/dags -name "*.py" -print0 | while IFS= read -r -d $'\0' dag_file; do
+      #       echo "--- Validating DAG file: $dag_file ---"
+           
+      #       if ! python -m ast "$dag_file"; then
+      #         echo "Python syntax ERROR in $dag_file"
+      #         FAIL_FLAG=1 
+      #       else
+      #         echo "Python syntax OK for $dag_file"
+      #         IMPORT_ERRORS=$(airflow dags list-import-errors --subdir "$dag_file" 2>&1) # Capture stdout and stderr
+              
+      #         if [[ -n "$IMPORT_ERRORS" && ! "$IMPORT_ERRORS" =~ "No import errors" && ! "$IMPORT_ERRORS" =~ "DAGS_FOLDER" && ! "$IMPORT_ERRORS" =~ "dag_id" ]]; then
+      #           echo "Airflow import ERRORS found in $dag_file:"
+      #           echo "$IMPORT_ERRORS"
+      #           FAIL_FLAG=1 
+      #         else
+      #           echo "No critical Airflow import errors detected for $dag_file (or only informational output)."
+      #         fi
+      #       fi
+      #       echo "--- Finished validating $dag_file ---"
+      #     done
+
+      #     if [ "$FAIL_FLAG" -eq 1 ]; then
+      #       echo "One or more DAG validation checks failed."
+      #       exit 1
+      #     fi
+      #     echo "All DAGs validated successfully."
 
       # DETERMINE DOCKER IMAGE TAGS BASED ON BRANCH
       - name: Determine Docker image tag suffix for floating tags
@@ -107,8 +176,8 @@ jobs:
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }} 
-          password: ${{ secrets.DOCKERHUB_TOKEN }}    
+          username: ${{secrets.DOCKERHUB_USERNAME}} 
+          password: ${{secrets.DOCKERHUB_TOKEN}}    
 
       # SET UP DOCKER BUILDX (for multi-platform builds and better caching)
       - name: Set up Docker Buildx
